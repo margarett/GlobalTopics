@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!DOCTYPE package-info SYSTEM "http://www.simplemachines.org/xml/package-info">
+<package-info xmlns="http://www.simplemachines.org/xml/package-info" xmlns:smf="http://www.simplemachines.org/">
+	<id>margarett:GlobalTopics</id>
+	<name>Global Topics</name>
+	<version>2.2</version>
+	<type>modification</type>
+	<install for="2.0 - 2.0.99">
+		<modification>install.xml</modification>
+		<require-file name="global.gif" destination="$imagesdir/topic" />
+		<database>install.php</database>
+        <readme parsebbc="true">readme.txt</readme>
+	</install>
+	<uninstall for="2.0 - 2.0.99">
+		<modification reverse="true">install.xml</modification>
+		<remove-file name="$imagesdir/topic/global.gif" />
+	</uninstall>
+</package-info>

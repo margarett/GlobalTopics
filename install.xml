@@ -1,0 +1,389 @@
+<?xml version="1.0"?>
+<!DOCTYPE modification SYSTEM "http://www.simplemachines.org/xml/modification">
+<modification xmlns="http://www.simplemachines.org/xml/modification" xmlns:smf="http://www.simplemachines.org/">
+	<id>margarett:GlobalTopics</id>
+	<version>2.2</version>
+	<file name="$boarddir/index.php">
+		<operation>
+			<search position="before"><![CDATA[		'findmember' => array('Subs-Auth.php', 'JSMembers'),]]></search>
+			<add><![CDATA[
+		'global' => array('LockTopic.php', 'GlobalTopic'),]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/Display.php">
+		<operation>
+			<search position="replace"><![CDATA[t.num_replies, t.num_views, t.locked, ms.subject, t.is_sticky]]></search>
+			<add><![CDATA[t.num_replies, t.num_views, t.locked, ms.subject, t.is_global, t.is_sticky]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[	$context['is_sticky'] = $topicinfo['is_sticky'];]]></search>
+			<add><![CDATA[	$context['is_sticky'] = $topicinfo['is_sticky'];
+	$context['is_global'] = $topicinfo['is_global'];]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[		'can_sticky' => 'make_sticky',]]></search>
+			<add><![CDATA[		'can_sticky' => 'make_sticky',
+		'can_global' => 'make_global',]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[	// Cleanup all the permissions with extra stuff...]]></search>
+			<add><![CDATA[	// Cleanup all the permissions with extra stuff...
+	$context['can_global'] &= !empty($board_info['global_topics']);]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[		$context['wireless_more'] = $context['can_sticky'] || $context['can_lock'] || allowedTo('modify_any');]]></search>
+			<add><![CDATA[		$context['wireless_more'] = $context['can_sticky'] || $context['can_lock'] || allowedTo('modify_any') || $context['can_global'];]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/Load.php">
+		<operation>
+			<search position="replace"><![CDATA[b.override_theme, b.count_posts]]></search>
+			<add><![CDATA[b.override_theme, b.global_topics, b.count_posts]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[				'posts_count' => empty($row['count_posts']),]]></search>
+			<add><![CDATA[				'global_topics' => $row['global_topics'],
+				'posts_count' => empty($row['count_posts']),]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/LockTopic.php">
+		<operation>
+			<search position="end" />
+			<add><![CDATA[function GlobalTopic()
+{
+	global $smcFunc, $topic, $board, $board_info;
+
+	checkSession('get');
+
+	isAllowedTo('make_global');
+
+	if (empty($topic))
+		fatal_lang_error('not_a_topic', false);
+	if (empty($board_info['global_topics']))
+		fatal_lang_error('board_not_global', false);
+
+	$request = $smcFunc['db_query']('', '
+		SELECT is_global
+		FROM {db_prefix}topics
+		WHERE id_topic = {int:current_topic}
+		LIMIT 1',
+		array(
+			'current_topic' => $topic,
+		)
+	);
+	list ($is_global) = $smcFunc['db_fetch_row']($request);
+	$smcFunc['db_free_result']($request);
+
+	$smcFunc['db_query']('', '
+		UPDATE {db_prefix}topics
+		SET is_global = {int:is_global}
+		WHERE id_topic = {int:current_topic}',
+		array(
+			'current_topic' => $topic,
+			'is_global' => empty($is_global) ? 1 : 0,
+		)
+	);
+
+	logAction(empty($is_global) ? 'global' : 'unglobal', array('topic' => $topic, 'board' => $board));
+
+	redirectexit('topic=' . $topic . '.' . $_REQUEST['start'] . (WIRELESS ? ';moderate' : ''));
+}]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/ManageBoards.php">
+		<operation>
+			<search position="replace"><![CDATA[		$boardOptions['posts_count'] = isset($_POST['count']);]]></search>
+			<add><![CDATA[		$boardOptions['global_topics'] = isset($_POST['global_topics']);
+		$boardOptions['posts_count'] = isset($_POST['count']);]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[			'count_posts' => 1,]]></search>
+			<add><![CDATA[			'global_topics' => 0,
+			'count_posts' => 1,]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/ManagePermissions.php">
+		<operation>
+			<search position="replace"><![CDATA[		'make_sticky',]]></search>
+			<add><![CDATA[		'make_sticky',
+		'make_global',]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[			'make_sticky' => array(false, 'topic', 'moderate'),]]></search>
+			<add><![CDATA[			'make_sticky' => array(false, 'topic', 'moderate'),
+			'make_global' => array(false, 'topic', 'moderate'),]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/MessageIndex.php">
+		<operation>
+			<search position="replace"><![CDATA[	// Setup the default topic icons...]]></search>
+			<add><![CDATA[	if (empty($_REQUEST['start']) && !empty($board_info['global_topics']))
+	{
+		$result = $smcFunc['db_query']('', '
+			SELECT COUNT(*)
+			FROM {db_prefix}topics AS t
+				INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+			WHERE {query_see_board}' . (!$modSettings['postmod_active'] || $context['can_approve_posts'] ? '' : '
+				AND (t.approved = {int:is_approved}' . ($user_info['is_guest'] ? '' : ' OR t.id_member_started = {int:current_member}') . ')') . '
+				AND t.is_global = {int:is_global}
+				AND b.id_board != {int:current_board}',
+			array(
+				'current_member' => $user_info['id'],
+				'is_approved' => 1,
+				'is_global' => 1,
+				'current_board' => $board,
+			)
+		);
+		list ($global_topics) = $smcFunc['db_fetch_row']($result);
+		$smcFunc['db_free_result']($result);
+
+		if (!empty($global_topics))
+			$maxindex += $global_topics;
+	}
+
+	// Setup the default topic icons...]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[WHERE t.id_board = {int:current_board}']]></search>
+			<add><![CDATA[WHERE ' . (empty($global_topics) ? 't.id_board = {int:current_board}' : '(t.id_board = {int:current_board} OR is_global = {int:is_global})')]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[ORDER BY ' . (!empty($modSettings['enableStickyTopics'])]]></search>
+			<add><![CDATA[ORDER BY ' . (!empty($board_info['global_topics']) ? 'is_global' . ($fake_ascending ? '' : ' DESC') . ', ' : '') . (!empty($modSettings['enableStickyTopics'])]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[				'id_member_guest' => 0,]]></search>
+			<add><![CDATA[				'id_member_guest' => 0,
+				'is_global' => 1,]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[t.num_replies, t.locked, t.num_views, t.is_sticky]]></search>
+			<add><![CDATA[t.num_replies, t.locked, t.num_views, t.is_sticky, t.is_global]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[($pre_query ? 't.id_topic IN ({array_int:topic_list})' : 't.id_board = {int:current_board}')]]></search>
+			<add><![CDATA[($pre_query ? 't.id_topic IN ({array_int:topic_list})' : (empty($global_topics) ? 't.id_board = {int:current_board}' : '(t.id_board = {int:current_board} OR is_global = {int:is_global})'))]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[: (!empty($modSettings['enableStickyTopics'])]]></search>
+			<add><![CDATA[: (!empty($board_info['global_topics']) ? 'is_global' . ($fake_ascending ? '' : ' DESC') . ', ' : '') . (!empty($modSettings['enableStickyTopics'])]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[				'topic_list' => $topic_ids,
+				'is_approved' => 1,]]></search>
+			<add><![CDATA[				'topic_list' => $topic_ids,
+				'is_approved' => 1,
+				'is_global' => 1,]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[				'is_sticky' => !empty($modSettings['enableStickyTopics']) && !empty($row['is_sticky']),]]></search>
+			<add><![CDATA[				'is_sticky' => !empty($modSettings['enableStickyTopics']) && !empty($row['is_sticky']),
+				'is_global' => !empty($board_info['global_topics']) && !empty($row['is_global']),]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[				$context['topics'][$row['id_topic']]['is_posted_in'] = true;
+				$context['topics'][$row['id_topic']]['class'] = 'my_' . $context['topics'][$row['id_topic']]['class'];]]></search>
+			<add><![CDATA[				if (!$context['topics'][$row['id_topic']]['is_global'])
+				{
+					$context['topics'][$row['id_topic']]['is_posted_in'] = true;
+					$context['topics'][$row['id_topic']]['class'] = 'my_' . $context['topics'][$row['id_topic']]['class'];
+				}]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/Recent.php">
+		<operation>
+			<search position="before"><![CDATA[t.num_replies, t.num_views, ms.id_member AS id_first_member, ml.id_member AS id_last_member,]]></search>
+			<add><![CDATA[ t.is_global,]]></add>
+		</operation>	
+		<operation>
+			<search position="before"><![CDATA['is_sticky' => !empty($modSettings['enableStickyTopics']) && !empty($row['is_sticky']),]]></search>
+			<add><![CDATA[
+			'is_global' => !empty($row['is_global']),]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[				$context['topics'][$row['id_topic']]['class'] = 'my_' . $context['topics'][$row['id_topic']]['class'];]]></search>
+			<add><![CDATA[				if (strpos($context['topics'][$row['id_topic']]['class'], 'global') === false)
+					$context['topics'][$row['id_topic']]['class'] = 'my_' . $context['topics'][$row['id_topic']]['class'];]]></add>
+		</operation>	
+	</file>	
+	<file name="$sourcedir/Subs.php">
+		<operation>
+			<search position="after"><![CDATA[	// This is so old themes will still work.]]></search>
+			<add><![CDATA[	//Global Topics have full priority
+	if (!empty($topic_context['is_global']))
+		$topic_context['class'] = 'global';
+
+]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/Subs-Boards.php">
+		<operation>
+			<search position="replace"><![CDATA[	// This setting is a little twisted in the database...]]></search>
+			<add><![CDATA[	if (isset($boardOptions['global_topics']))
+	{
+		$boardUpdates[] = 'global_topics = {int:global_topics}';
+		$boardUpdateParameters['global_topics'] = $boardOptions['global_topics'] ? 1 : 0;
+	}
+
+	// This setting is a little twisted in the database...]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[b.board_order, b.count_posts]]></search>
+			<add><![CDATA[b.board_order, b.global_topics, b.count_posts]]></add>
+		</operation>
+		<operation>
+			<search position="replace"><![CDATA[				'count_posts' => empty($row['count_posts']),]]></search>
+			<add><![CDATA[				'global_topics' => $row['global_topics'],
+				'count_posts' => empty($row['count_posts']),]]></add>
+		</operation>
+	</file>
+	<file name="$themedir/Display.template.php">
+		<operation>
+			<search position="replace"><![CDATA[		'sticky' => array('test' => 'can_sticky', 'text' => empty($context['is_sticky']) ? 'set_sticky' : 'set_nonsticky', 'image' => 'admin_sticky.gif', 'lang' => true, 'url' => $scripturl . '?action=sticky;topic=' . $context['current_topic'] . '.' . $context['start'] . ';' . $context['session_var'] . '=' . $context['session_id']),]]></search>
+			<add><![CDATA[		'sticky' => array('test' => 'can_sticky', 'text' => empty($context['is_sticky']) ? 'set_sticky' : 'set_nonsticky', 'image' => 'admin_sticky.gif', 'lang' => true, 'url' => $scripturl . '?action=sticky;topic=' . $context['current_topic'] . '.' . $context['start'] . ';' . $context['session_var'] . '=' . $context['session_id']),
+		'global' => array('test' => 'can_global', 'text' => empty($context['is_global']) ? 'global_topic' : 'not_global_topic', 'image' => 'admin_global.gif', 'lang' => true, 'url' => $scripturl . '?action=global;topic=' . $context['current_topic'] . '.' . $context['start'] . ';' . $context['session_var'] . '=' . $context['session_id']),]]></add>
+		</operation>
+	</file>
+	<file name="$themedir/ManageBoards.template.php">
+		<operation>
+			<search position="before"><![CDATA[document.getElementById("board_theme_div").style.display = redirectEnabled ? "none" : "";]]></search>
+			<add><![CDATA[
+			document.getElementById("global_topics_div").style.display = redirectEnabled? "none" : "";
+]]></add>
+		</operation>
+		<operation>
+			<search position="after"><![CDATA[	// Here the user can choose to force this board to use a theme other than the default theme for the forum.]]></search>
+			<add><![CDATA[	echo '
+					<div id="global_topics_div">
+						<dl class="settings">
+							<dt>
+								<strong>', $txt['global_topics_board'], ':</strong><br />
+								<span class="smalltext">', $txt['global_topics_board_desc'], '</span><br />
+							</dt>
+							<dd>
+								<input type="checkbox" name="global_topics" ', $context['board']['global_topics'] ? ' checked="checked"' : '', ' class="input_check" />
+							</dd>
+						</dl>
+					</div>';
+
+]]></add>
+		</operation>
+	</file>
+	<file name="$themedir/MessageIndex.template.php">
+		<operation>
+			<search position="before"><![CDATA[$color_class = !$topic['approved'] ? 'approvetbg' : 'approvebg';]]></search>
+			<add><![CDATA[
+			elseif ($topic['is_global'])
+				$color_class = 'global';]]></add>
+		</operation>
+	</file>
+	<file name="$themedir/Recent.template.php">
+		<operation>
+			<search position="before"><![CDATA[								<a href="', $scripturl, '?action=unread', $context['showing_all_topics'] ? ';all' : '', $context['querystring_board_limits'], ';sort=last_post', $context['sort_by'] == 'last_post' && $context['sort_direction'] == 'up' ? ';desc' : '', '">', $txt['last_post'], $context['sort_by'] == 'last_post' ? ' <img src="' . $settings['images_url'] . '/sort_' . $context['sort_direction'] . '.gif" alt="" />' : '', '</a>
+							</th>';
+		echo '
+						</tr>
+					</thead>
+					<tbody>';
+
+		foreach ($context['topics'] as $topic)
+		{
+			// Calculate the color class of the topic.
+			$color_class = '';
+			if (strpos($topic['class'], 'sticky') !== false)
+				$color_class = 'stickybg';
+			if (strpos($topic['class'], 'locked') !== false)
+				$color_class .= 'lockedbg';]]></search>
+			<add><![CDATA[
+			elseif ($topic['is_global'])
+				$color_class = 'global';
+]]></add>
+		</operation>
+		<operation>
+			<search position="before"><![CDATA[								<a href="', $scripturl, '?action=unreadreplies', $context['querystring_board_limits'], ';sort=last_post', $context['sort_by'] === 'last_post' && $context['sort_direction'] === 'up' ? ';desc' : '', '">', $txt['last_post'], $context['sort_by'] === 'last_post' ? ' <img src="' . $settings['images_url'] . '/sort_' . $context['sort_direction'] . '.gif" alt="" />' : '', '</a>
+							</th>';
+		echo '
+						</tr>
+					</thead>
+					<tbody>';
+
+		foreach ($context['topics'] as $topic)
+		{
+			// Calculate the color class of the topic.
+			$color_class = '';
+			if (strpos($topic['class'], 'sticky') !== false)
+				$color_class = 'stickybg';
+			if (strpos($topic['class'], 'locked') !== false)
+				$color_class .= 'lockedbg';]]></search>
+			<add><![CDATA[
+			elseif ($topic['is_global'])
+				$color_class = 'global';
+]]></add>
+		</operation>
+	</file>	
+	<file name="$themedir/Wireless.template.php">
+		<operation>
+			<search position="replace"><![CDATA[		if ($context['can_lock'])]]></search>
+			<add><![CDATA[		if ($context['can_global'])
+			echo '
+				<tr><td><a href="', $scripturl, '?action=global;topic=', $context['current_topic'], '.', $context['start'], ';', $context['session_var'], '=', $context['session_id'], ';imode">', $txt['wireless_display_' . ($context['is_global'] ? 'unglobal' : 'global')], '</a></td></tr>';
+		if ($context['can_lock'])]]></add>
+		</operation>
+	</file>
+	<file name="$themedir/css/index.css">
+		<operation>
+			<search position="after"><![CDATA[/* Colors for background of posts requiring approval */]]></search>
+			<add><![CDATA[/* Colors for background of Global Topics */
+.global
+{
+	color: #000000;
+	background-color: #C5E0FF;
+}
+.global2
+{
+	color: #000000;
+	background-color: #C5E0FF;
+}
+
+]]></add>
+		</operation>
+	</file>
+	<file name="$languagedir/Modifications.english.php">
+		<operation>
+			<search position="end" />
+			<add><![CDATA[
+$txt['global_topic'] = 'Global Topic';
+$txt['not_global_topic'] = 'Not Global Topic';
+$txt['global_topics_board'] = 'Enable Global Topics';
+$txt['global_topics_board_desc'] = 'Displays the global topics in the board';
+$txt['modlog_ac_global'] = 'Made global &quot;{topic}&quot;';
+$txt['modlog_ac_unglobal'] = 'Made not global &quot;{topic}&quot;';
+$txt['permissionname_make_global'] = 'Make topics global';
+$txt['permissionhelp_solve_topic'] = 'This permission allows a user to make a topic global.';
+$txt['cannot_make_global'] = 'You cannot make topics global.';
+$txt['board_not_global'] = 'You cannot make topics global in this board';
+$txt['wireless_display_global'] = 'Global';
+$txt['wireless_display_not_global'] = 'Not Global';
+]]></add>
+		</operation>
+	</file>
+	<file name="$languagedir/Modifications.english-utf8.php" error="skip">
+		<operation>
+			<search position="end" />
+			<add><![CDATA[
+$txt['global_topic'] = 'Global Topic';
+$txt['not_global_topic'] = 'Not Global Topic';
+$txt['global_topics_board'] = 'Enable Global Topics';
+$txt['global_topics_board_desc'] = 'Displays the global topics in the board';
+$txt['modlog_ac_global'] = 'Made global &quot;{topic}&quot;';
+$txt['modlog_ac_unglobal'] = 'Made not global &quot;{topic}&quot;';
+$txt['permissionname_make_global'] = 'Make topics global';
+$txt['permissionhelp_solve_topic'] = 'This permission allows a user to make a topic global.';
+$txt['cannot_make_global'] = 'You cannot make topics global.';
+$txt['board_not_global'] = 'You cannot make topics global in this board';
+$txt['wireless_display_global'] = 'Global';
+$txt['wireless_display_not_global'] = 'Not Global';
+]]></add>
+		</operation>
+	</file>
+</modification>
